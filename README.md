@@ -85,7 +85,6 @@ This application demonstrates basic DuckDB operations using Go:
 3. Users can create/update/delete the records that are saved to a people.duckdb file.
 4. If you close the app and reopen it will read the saved people.duckdb file so you can continue working on your people list.
 
-```
 
 ## License
 
