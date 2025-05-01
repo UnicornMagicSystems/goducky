@@ -3,91 +3,6 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"log"
-	"os"
-
-	_ "github.com/marcboeker/go-duckdb"
-)
-
-func main() {
-	// Define the path where the DuckDB file will be saved
-	dbPath := "mydatabase.duckdb"
-
-	// Check if the file already exists and remove it for this example
-	if _, err := os.Stat(dbPath); err == nil {
-		if err := os.Remove(dbPath); err != nil {
-			log.Fatalf("Failed to remove existing database file: %v", err)
-		}
-		fmt.Println("Removed existing database file")
-	}
-
-	// Connect to DuckDB (this will create the file if it doesn't exist)
-	db, err := sql.Open("duckdb", dbPath)
-	if err != nil {
-		log.Fatalf("Failed to open database: %v", err)
-	}
-	defer db.Close()
-
-	fmt.Println("Connected to DuckDB database")
-
-	// Create a table
-	_, err = db.Exec(`
-		CREATE TABLE users (
-			id INTEGER PRIMARY KEY,
-			name VARCHAR(100),
-			email VARCHAR(100),
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		)
-	`)
-	if err != nil {
-		log.Fatalf("Failed to create table: %v", err)
-	}
-	fmt.Println("Created 'users' table")
-
-	// Insert some sample data
-	_, err = db.Exec(`
-		INSERT INTO users (id, name, email) VALUES 
-		(1, 'John Doe', 'john@example.com'),
-		(2, 'Jane Smith', 'jane@example.com'),
-		(3, 'Bob Johnson', 'bob@example.com')
-	`)
-	if err != nil {
-		log.Fatalf("Failed to insert data: %v", err)
-	}
-	fmt.Println("Inserted sample data")
-
-	// Query the data to verify
-	rows, err := db.Query("SELECT id, name, email FROM users")
-	if err != nil {
-		log.Fatalf("Failed to query data: %v", err)
-	}
-	defer rows.Close()
-
-	fmt.Println("\nUsers in the database:")
-	fmt.Println("----------------------")
-	for rows.Next() {
-		var id int
-		var name, email string
-		if err := rows.Scan(&id, &name, &email); err != nil {
-			log.Fatalf("Failed to scan row: %v", err)
-		}
-		fmt.Printf("ID: %d, Name: %s, Email: %s\n", id, name, email)
-	}
-
-	if err := rows.Err(); err != nil {
-		log.Fatalf("Error during row iteration: %v", err)
-	}
-
-	fmt.Printf("\nDuckDB database saved to: %s\n", dbPath)
-}
-
-package main
-
-import (
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
-	"os"
 	"strconv"
 
 	"fyne.io/fyne/v2"
@@ -96,29 +11,30 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
+	_ "github.com/marcboeker/go-duckdb"
 )
 
 // Person represents a person record
 type Person struct {
-	ID        string `json:"id"`
-	FirstName string `json:"first_name"`
-	LastName  string `json:"last_name"`
-	Age       int    `json:"age"`
+	ID        int
+	FirstName string
+	LastName  string
+	Age       int
 }
 
-// Database represents our simple database
-type Database map[string]Person
+const dbPath = "people.duckdb"
 
-const dbPath = "people.duckydb"
+var db *sql.DB
 
 func main() {
+	// Initialize database
+	initDB()
+	defer db.Close()
+
 	// Create a new Fyne application
 	a := app.New()
 	w := a.NewWindow("Person Database")
 	w.Resize(fyne.NewSize(600, 400))
-
-	// Load database
-	db := loadDatabase()
 
 	// Create form widgets
 	firstNameEntry := widget.NewEntry()
@@ -130,10 +46,13 @@ func main() {
 	ageEntry := widget.NewEntry()
 	ageEntry.SetPlaceHolder("Enter Age")
 
+	// Load people data
+	people := loadPeople()
+
 	// Create a table to display data
 	table := widget.NewTable(
 		func() (int, int) {
-			return len(db) + 1, 4 // +1 for header row
+			return len(people) + 1, 4 // +1 for header row
 		},
 		func() fyne.CanvasObject {
 			return widget.NewLabel("Wide Content")
@@ -156,12 +75,11 @@ func main() {
 			} else {
 				// Data rows
 				row := i.Row - 1 // Adjust for header
-				keys := getKeys(db)
-				if row < len(keys) {
-					person := db[keys[row]]
+				if row < len(people) {
+					person := people[row]
 					switch i.Col {
 					case 0:
-						label.SetText(person.ID)
+						label.SetText(strconv.Itoa(person.ID))
 					case 1:
 						label.SetText(person.FirstName)
 					case 2:
@@ -181,15 +99,14 @@ func main() {
 	table.SetColumnWidth(3, 80)
 
 	// Variable to track selected record
-	var selectedID string
+	var selectedID int = -1
 
 	// Handle table selection
 	table.OnSelected = func(id widget.TableCellID) {
 		if id.Row > 0 { // Skip header row
-			keys := getKeys(db)
 			idx := id.Row - 1 // Adjust for header
-			if idx < len(keys) {
-				person := db[keys[idx]]
+			if idx < len(people) {
+				person := people[idx]
 				selectedID = person.ID
 				firstNameEntry.SetText(person.FirstName)
 				lastNameEntry.SetText(person.LastName)
@@ -200,12 +117,13 @@ func main() {
 
 	// Function to refresh the table
 	refreshTable := func() {
+		people = loadPeople()
 		table.Refresh()
 	}
 
 	// Function to clear form
 	clearForm := func() {
-		selectedID = ""
+		selectedID = -1
 		firstNameEntry.SetText("")
 		lastNameEntry.SetText("")
 		ageEntry.SetText("")
@@ -229,19 +147,13 @@ func main() {
 			return
 		}
 
-		// Generate a new ID
-		newID := strconv.Itoa(len(db) + 1)
-
-		// Add to database
-		db[newID] = Person{
-			ID:        newID,
-			FirstName: firstName,
-			LastName:  lastName,
-			Age:       age,
+		// Add to database - no need to specify ID as it will use the sequence
+		_, err = db.Exec("INSERT INTO people (first_name, last_name, age) VALUES (?, ?, ?)",
+			firstName, lastName, age)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("failed to add record: %v", err), w)
+			return
 		}
-
-		// Save database
-		saveDatabase(db)
 
 		// Refresh table and clear form
 		refreshTable()
@@ -252,7 +164,7 @@ func main() {
 
 	// Update button
 	updateButton := widget.NewButton("Update", func() {
-		if selectedID == "" {
+		if selectedID == -1 {
 			dialog.ShowError(fmt.Errorf("please select a record to update"), w)
 			return
 		}
@@ -273,14 +185,12 @@ func main() {
 		}
 
 		// Update database
-		person := db[selectedID]
-		person.FirstName = firstName
-		person.LastName = lastName
-		person.Age = age
-		db[selectedID] = person
-
-		// Save database
-		saveDatabase(db)
+		_, err = db.Exec("UPDATE people SET first_name = ?, last_name = ?, age = ? WHERE id = ?",
+			firstName, lastName, age, selectedID)
+		if err != nil {
+			dialog.ShowError(fmt.Errorf("failed to update record: %v", err), w)
+			return
+		}
 
 		// Refresh table and clear form
 		refreshTable()
@@ -291,7 +201,7 @@ func main() {
 
 	// Delete button
 	deleteButton := widget.NewButton("Delete", func() {
-		if selectedID == "" {
+		if selectedID == -1 {
 			dialog.ShowError(fmt.Errorf("please select a record to delete"), w)
 			return
 		}
@@ -300,10 +210,11 @@ func main() {
 		dialog.ShowConfirm("Confirm", "Are you sure you want to delete this record?", func(confirmed bool) {
 			if confirmed {
 				// Delete from database
-				delete(db, selectedID)
-
-				// Save database
-				saveDatabase(db)
+				_, err := db.Exec("DELETE FROM people WHERE id = ?", selectedID)
+				if err != nil {
+					dialog.ShowError(fmt.Errorf("failed to delete record: %v", err), w)
+					return
+				}
 
 				// Refresh table and clear form
 				refreshTable()
@@ -348,53 +259,53 @@ func main() {
 	w.ShowAndRun()
 }
 
-// Helper function to get keys from map in a consistent order
-func getKeys(db Database) []string {
-	keys := make([]string, 0, len(db))
-	for k := range db {
-		keys = append(keys, k)
+// Initialize the database
+func initDB() {
+	var err error
+	db, err = sql.Open("duckdb", dbPath)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to open database: %v", err))
 	}
-	return keys
+
+	// Create sequence if it doesn't exist
+	_, err = db.Exec(`CREATE SEQUENCE IF NOT EXISTS people_id_seq`)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create sequence: %v", err))
+	}
+
+	// Create table if it doesn't exist with sequence as default for id
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS people (
+			id INTEGER PRIMARY KEY DEFAULT nextval('people_id_seq'),
+			first_name VARCHAR NOT NULL,
+			last_name VARCHAR NOT NULL,
+			age INTEGER NOT NULL
+		)
+	`)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to create table: %v", err))
+	}
 }
 
-// Load database from file
-func loadDatabase() Database {
-	db := make(Database)
-
-	// Check if file exists
-	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		return db
-	}
-
-	// Read file
-	data, err := ioutil.ReadFile(dbPath)
+// Load people from database
+func loadPeople() []Person {
+	rows, err := db.Query("SELECT id, first_name, last_name, age FROM people ORDER BY id")
 	if err != nil {
-		fmt.Printf("Error reading database file: %v\n", err)
-		return db
+		fmt.Printf("Error querying database: %v\n", err)
+		return []Person{}
+	}
+	defer rows.Close()
+
+	var people []Person
+	for rows.Next() {
+		var p Person
+		err := rows.Scan(&p.ID, &p.FirstName, &p.LastName, &p.Age)
+		if err != nil {
+			fmt.Printf("Error scanning row: %v\n", err)
+			continue
+		}
+		people = append(people, p)
 	}
 
-	// Unmarshal JSON
-	err = json.Unmarshal(data, &db)
-	if err != nil {
-		fmt.Printf("Error parsing database file: %v\n", err)
-		return make(Database)
-	}
-
-	return db
-}
-
-// Save database to file
-func saveDatabase(db Database) {
-	// Marshal to JSON
-	data, err := json.MarshalIndent(db, "", "  ")
-	if err != nil {
-		fmt.Printf("Error serializing database: %v\n", err)
-		return
-	}
-
-	// Write to file
-	err = ioutil.WriteFile(dbPath, data, 0644)
-	if err != nil {
-		fmt.Printf("Error writing database file: %v\n", err)
-	}
+	return people
 }

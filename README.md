@@ -80,34 +80,12 @@ GOOS=linux GOARCH=amd64 go build -o goducky-linux
 
 This application demonstrates basic DuckDB operations using Go:
 
-1. Creates a new DuckDB database file named `mydatabase.duckdb`
-2. Creates a `users` table with columns for ID, name, email, and creation timestamp
-3. Inserts sample user data
-4. Queries and displays the inserted data
-
-## Example Output
-
-When you run the application, you should see output similar to:
+1. The first time you run the app it will creates a new DuckDB database file named `people.duckdb` if it doesn't already exist.
+2. Creates a `people` table with columns for ID, first_name, last_name, and age.
+3. Users can create/update/delete the records that are saved to a people.duckdb file.
+4. If you close the app and reopen it will read the saved people.duckdb file so you can continue working on your people list.
 
 ```
-Connected to DuckDB database
-Created 'users' table
-Inserted sample data
-
-Users in the database:
-----------------------
-ID: 1, Name: John Doe, Email: john@example.com
-ID: 2, Name: Jane Smith, Email: jane@example.com
-ID: 3, Name: Bob Johnson, Email: bob@example.com
-
-DuckDB database saved to: mydatabase.duckdb
-```
-
-## Notes
-
-- The application will remove any existing database file with the same name before creating a new one.
-- The database file is stored in the same directory as the executable.
-- This example uses the [go-duckdb](https://github.com/marcboeker/go-duckdb) driver.
 
 ## License
 
