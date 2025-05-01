@@ -32,12 +32,13 @@ cd goducky
 ### Install Dependencies
 
 The application uses the `go-duckdb` driver to connect to DuckDB. Install it with:
-
+(If you want the GUI app version of this rename main.go to main.goZZZ and rename main.goGUI to main.go)
 ```bash
 go get github.com/marcboeker/go-duckdb
+go mod tidy
 ```
 
-### Building and Running the Application(If you want the GUI app version of this rename main.go to main.goZZZ and rename main.goGUI to main.go)
+### Building and Running the Application
 
 #### Build and Run Locally
 
