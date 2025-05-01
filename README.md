@@ -87,12 +87,6 @@ This application demonstrates basic DuckDB operations using Go:
 
 ```
 
-## Notes
-
-- The application will remove any existing database file with the same name before creating a new one.
-- The database file is stored in the same directory as the executable.
-- This example uses the [go-duckdb](https://github.com/marcboeker/go-duckdb) driver.
-
 ## License
 
 [BSD 3-Clause License](LICENSE)
