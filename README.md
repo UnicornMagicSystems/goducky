@@ -84,6 +84,7 @@ This application demonstrates basic DuckDB operations using Go:
 2. Creates a `people` table with columns for ID, first_name, last_name, and age.
 3. Users can create/update/delete the records that are saved to a people.duckdb file.
 4. If you close the app and reopen it will read the saved people.duckdb file so you can continue working on your people list.
+5. Built on the backs of awesome go modules https://github.com/fyne-io/fyne and github.com/marcboeker/go-duckdb.
 
 
 ## License
